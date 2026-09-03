@@ -30,6 +30,7 @@ def parse_request(state: ResearchState) -> dict[str, Any]:
         )
     except InputValidationError as exc:
         return {
+            "input_validated": False,
             "errors": state.get("errors", []) + list(exc.violations),
             "status_message": f"Input validation failed: {exc}",
         }
@@ -39,6 +40,7 @@ def parse_request(state: ResearchState) -> dict[str, Any]:
     start = end - timedelta(days=days)
 
     result = {
+        "input_validated": True,
         "date_range": {"start": start.isoformat(), "end": end.isoformat()},
         "iteration_count": 0,
         "documents": [],
@@ -47,7 +49,7 @@ def parse_request(state: ResearchState) -> dict[str, Any]:
         "errors": [],
         "retrieved_context": [],
         "rag_chunks_indexed": 0,
-        "human_approved": False,
+        "human_approved": state.get("human_approved", False),
         "status_message": "Research request parsed and validated",
     }
 
@@ -105,6 +107,13 @@ def human_review_pause(state: ResearchState) -> dict[str, Any]:
     }
 
 
+def route_after_parse(state: ResearchState) -> str:
+    """Stop workflow when input validation fails."""
+    if state.get("input_validated") is False:
+        return "stop"
+    return "continue"
+
+
 def route_after_coordinate(state: ResearchState) -> str:
     """Route coordinator output based on workflow phase."""
     if state.get("comparison") and not state.get("escalation"):
@@ -135,7 +144,14 @@ def build_graph() -> StateGraph:
 
     # Edges
     graph.set_entry_point("parse_request")
-    graph.add_edge("parse_request", "check_memory")
+    graph.add_conditional_edges(
+        "parse_request",
+        route_after_parse,
+        {
+            "continue": "check_memory",
+            "stop": END,
+        },
+    )
     graph.add_edge("check_memory", "coordinate")
     graph.add_conditional_edges(
         "coordinate",

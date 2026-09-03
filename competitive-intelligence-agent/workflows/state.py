@@ -21,6 +21,7 @@ class ResearchState(TypedDict, total=False):
     company_ids: dict[str, int]
     status_message: str
     iteration_count: int
+    input_validated: bool
 
     # Planning
     research_plan: dict[str, Any]

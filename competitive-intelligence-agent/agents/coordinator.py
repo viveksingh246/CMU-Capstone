@@ -85,7 +85,7 @@ def coordinate_pre_report(state: ResearchState) -> dict[str, Any]:
 def _determine_phase(state: ResearchState) -> str:
     if state.get("final_report"):
         return "complete"
-    if state.get("comparison"):
+    if state.get("comparison") is not None:
         return "analysis"
     if state.get("findings"):
         return "validation"
@@ -93,6 +93,6 @@ def _determine_phase(state: ResearchState) -> str:
         return "extraction"
     if state.get("search_queries"):
         return "research"
-    if state.get("research_plan"):
+    if state.get("research_plan") is not None:
         return "planning"
     return "initialization"

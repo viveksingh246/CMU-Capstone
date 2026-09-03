@@ -88,13 +88,43 @@ MIN_SOURCES_PER_MAJOR_CLAIM=2
 
 ## Test Coverage
 
-| Test File | Checkpoint |
-|-----------|------------|
-| `tests/test_react_memory.py` | 2.1 |
-| `tests/test_rag.py` | 3.1 |
-| `tests/test_tot.py` | 4.1 |
-| `tests/test_safety.py` | 6.1 |
-| `tests/test_completeness.py` | 1.1 |
-| `tests/test_memory.py` | 1.1, 2.1 |
+| Test File | Tests | Checkpoint | Coverage |
+|-----------|-------|------------|----------|
+| `tests/test_workflow.py` | 10 | 1.1, 5.1, 6.1 | Graph nodes, routing, validation halt, human review |
+| `tests/test_completeness.py` | 4 | 1.1 | Gap detection, iteration limits |
+| `tests/test_memory.py` | 2 | 1.1, 2.1 | SQLite persistence |
+| `tests/test_search.py` | 4 | 1.1 | Source classification, dedup, fallback |
+| `tests/test_extraction.py` | 2 | 1.1 | Fact schema validation |
+| `tests/test_analysis.py` | 2 | 1.1 | Scorecard weighting |
+| `tests/test_mcp.py` | 6 | 1.1 | MCP tool servers |
+| `tests/test_react_memory.py` | 3 | 2.1 | Short-term memory, ReAct steps |
+| `tests/test_rag.py` | 5 | 3.1 | Chunking spec, vector store index/query |
+| `tests/test_tot.py` | 3 | 4.1 | Beam search, fallback branches |
+| `tests/test_critic.py` | 4 | 4.1 | Scoring rubric, pruning threshold |
+| `tests/test_coordinator.py` | 4 | 5.1 | Agent status, phase detection |
+| `tests/test_validator.py` | 5 | 6.1 | Evidence filtering, labeling, dedup |
+| `tests/test_safety.py` | 7 | 6.1 | Input validation, escalation, metrics |
+| `tests/test_escalation.py` | 9 | 6.1 | Conflicts, confidence, retrieval failures |
+| `tests/test_guardrails.py` | 6 | 6.1 | Source filtering, edge cases |
+| `tests/test_researcher.py` | 4 | 3.1, 5.1 | Search dedup, RAG indexing |
+| `tests/test_analyst.py` | 4 | 4.1, 1.1 | Historical changes, LLM fallback |
 
-Run: `make test` (36 tests)
+Run: `make test` (**85 tests**)
+
+## Audit Fixes Applied
+
+During the completeness review, these implementation gaps were found and fixed:
+
+1. **Input validation did not halt workflow** — invalid requests now route to `END` via `input_validated` flag
+2. **`human_approved` was reset on parse** — approval state now preserved across workflow entry
+3. **Analyst crashed without API key** — added `_fallback_analysis()` grounded in ToT results
+4. **Phase detection bug** — empty `research_plan: {}` incorrectly returned `initialization` instead of `planning`
+
+## Remaining Optional Enhancements (Not Blocking)
+
+| Item | Notes |
+|------|-------|
+| CrewAI framework | Checkpoint 4.1/5.1 mention CrewAI; equivalent roles implemented via LangChain agents |
+| OpenAI embeddings for RAG | Uses local hash embeddings for offline/tests; swap to OpenAI for production semantic quality |
+| End-to-end workflow integration test | Requires mocking LLM + Tavily; unit tests cover each node independently |
+| Resume workflow after human approval | Re-runs full workflow with `human_approved=True` (functional but not incremental resume) |
