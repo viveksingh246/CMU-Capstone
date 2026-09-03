@@ -7,11 +7,16 @@ Unlike a single-prompt LLM solution, this system uses an **iterative observe-rea
 ## Features
 
 - **LangGraph agent workflow** with planning, search, extraction, validation, and completeness loops
+- **ReAct reasoning loop** with short-term memory tracking (Checkpoint 2.1)
+- **ChromaDB RAG** with semantic document retrieval (Checkpoint 3.1)
+- **Tree-of-Thought beam search** with Critic agent evaluation (Checkpoint 4.1)
+- **Six-agent multi-agent architecture** with Memory & Coordination agent (Checkpoint 5.1)
+- **Safety guardrails** with human escalation and evaluation metrics (Checkpoint 6.1)
 - **Source-backed fact extraction** with confidence scoring and credibility ranking
 - **SQLite long-term memory** for findings, scores, and alerts
 - **Historical change detection** across research runs
 - **SWOT analysis**, weighted scorecards, and strategic recommendations
-- **Streamlit UI** with charts and downloadable reports
+- **Streamlit UI** with charts, human review, and downloadable reports
 - **Tavily search integration** with sample-data fallback for demos
 - **MCP tool servers** for search and memory (Cursor-compatible)
 
@@ -113,38 +118,31 @@ python mcp_servers/memory_server.py
 
 ```
 competitive-intelligence-agent/
-├── app.py                          # Streamlit UI
+├── app.py                          # Streamlit UI (human review, metrics)
 ├── config.py                       # Settings and environment
 ├── requirements.txt
 ├── agents/
-│   ├── planner.py                  # Research planning
-│   ├── researcher.py               # Source collection
-│   ├── extractor.py                # Fact extraction
-│   ├── validator.py                # Evidence validation
+│   ├── planner.py                  # Planner Agent — research planning
+│   ├── researcher.py               # Research Agent — collection + RAG indexing
+│   ├── extractor.py                # Fact extraction with RAG context
+│   ├── validator.py                # Validation Agent — evidence + safety
 │   ├── completeness.py             # Research gap detection
-│   ├── analyst.py                  # SWOT, scoring, recommendations
-│   ├── reporter.py                 # Executive report generation
+│   ├── analyst.py                  # Analysis Agent — ToT + SWOT + scoring
+│   ├── critic.py                   # Critic Agent — ToT branch evaluation
+│   ├── coordinator.py              # Memory & Coordination Agent
+│   ├── reporter.py                 # Report Generation Agent
 │   └── memory_agent.py             # SQLite persistence
-├── tools/
-│   ├── web_search.py               # Tavily + fallback search
-│   ├── mcp_tools.py                # MCP client facade for agents
-│   ├── news_search.py
-│   ├── github_search.py
-│   ├── job_search.py
-│   └── document_reader.py
-├── agent_mcp/
-│   ├── server.py                   # MCP server implementation
-│   ├── client.py                   # MCP client (inprocess / stdio)
-│   └── protocol.py                 # JSON-RPC helpers
-├── mcp_servers/
-│   ├── search_server.py            # MCP search tools
-│   └── memory_server.py            # MCP memory tools
-├── .cursor/
-│   └── mcp.json                    # Cursor MCP configuration
-├── workflows/
-│   ├── state.py                    # LangGraph state definition
-│   └── competitive_intelligence_graph.py
+├── rag/
+│   ├── chunking.py                 # Document chunking (500-800 tokens)
+│   └── vector_store.py             # ChromaDB semantic retrieval
+├── reasoning/
+│   └── tot_engine.py               # Tree-of-Thought beam search
+├── safety/
+│   ├── guardrails.py               # Input validation, output constraints
+│   ├── escalation.py               # Human intervention triggers
+│   └── metrics.py                  # Evaluation metrics
 ├── memory/
+│   ├── short_term.py               # ReAct short-term memory
 │   ├── database.py                 # SQLite operations
 │   └── schemas.py                  # Pydantic models
 ├── prompts/                        # LLM prompt templates
@@ -160,37 +158,45 @@ competitive-intelligence-agent/
 START
   │
   ▼
-Parse User Request
+Parse & Validate Request (Checkpoint 6.1)
   │
   ▼
-Check Memory ─────────────────────────────┐
-  │                                        │ Previous findings
-  ▼                                        │ reused for comparison
-Create Research Plan                       │
-  │                                        │
-  ▼                                        │
-Search Sources ◄──────────────────┐      │
-  │                               │      │
-  ▼                               │      │
-Extract Facts                     │      │
-  │                               │      │
-  ▼                               │      │
-Validate Evidence                 │      │
-  │                               │      │
-  ▼                               │      │
-Check Completeness ── Missing? ──►┘      │
-  │                                        │
-  ▼ (Complete)                             │
-Compare Companies ◄────────────────────────┘
+Check Memory (SQLite) ──────────────────────┐
+  │                                          │
+  ▼                                          │
+Coordinate (Memory & Coordination Agent)     │
+  │                                          │
+  ▼                                          │
+Create Research Plan (ReAct: plan)           │
+  │                                          │
+  ▼                                          │
+Search Sources ◄──────────────────┐         │
+  │                               │         │
+  ▼                               │         │
+RAG Index (ChromaDB)              │         │
+  │                               │         │
+  ▼                               │         │
+Extract Facts (RAG context)       │         │
+  │                               │         │
+  ▼                               │         │
+Validate Evidence (multi-source)  │         │
+  │                               │         │
+  ▼                               │         │
+Check Completeness ── Missing? ──►┘         │
+  │                                          │
+  ▼ (Complete)                               │
+ToT Analysis (beam search + Critic)          │
+  │                                          │
+  ▼                                          │
+Detect Historical Changes ◄──────────────────┘
   │
   ▼
-Detect Historical Changes
+Safety Check (escalation if confidence < 70%)
   │
-  ▼
-Save to Memory
+  ├── Low confidence ──► Human Review Pause
   │
-  ▼
-Generate Report & Charts
+  ▼ (Approved)
+Save to Memory → Generate Report
   │
   ▼
 END
@@ -220,21 +226,26 @@ END
 
 ## Evaluation Metrics
 
-| Metric | Target |
-|--------|--------|
-| Research coverage | ≥ 90% |
-| Citation coverage | ≥ 90% |
-| Source quality (official/reputable) | ≥ 70% |
-| Extraction accuracy (manual review) | ≥ 85% |
+| Metric | Target | Checkpoint |
+|--------|--------|------------|
+| Correctness (verified findings) | ≥ 95% | 6.1 |
+| Groundedness (cited claims) | ≥ 90% | 6.1 |
+| Source credibility (official/trusted) | ≥ 70% | 6.1 |
+| Research coverage | ≥ 90% | 1.1 |
+| Safety compliance | ≥ 95% | 6.1 |
+| Human escalation rate | Low-confidence only | 6.1 |
 
 ## Guardrails
 
+- Input validation rejects confidential/proprietary requests (Checkpoint 6.1)
 - Every important claim must include a source
+- Multi-source verification for critical findings (2+ independent sources)
 - Unknown information marked as "not publicly available"
 - Marketing statements labeled as company claims
 - No invented pricing or private-company revenue
 - Facts distinguished from analysis
 - Conflicting sources shown, not hidden
+- Human review required when confidence falls below 70%
 
 ## Future Enhancements
 

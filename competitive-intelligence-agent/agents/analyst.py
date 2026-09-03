@@ -7,25 +7,38 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.llm import get_llm, load_prompt
 from memory.schemas import Alert, CompanyScore, CompanySWOT, Recommendation
+from memory.short_term import record_react_step
+from reasoning.tot_engine import beam_search_analysis
 from workflows.state import ResearchState
 
 
 def analyze_competitors(state: ResearchState) -> dict[str, Any]:
-    """Compare companies and generate SWOT, scores, and recommendations."""
+    """Compare companies using Tree-of-Thought reasoning, SWOT, scores, and recommendations."""
     findings = state.get("findings", [])
     companies = state.get("companies", [])
     categories = state.get("categories", [])
     industry = state.get("industry", "")
 
+    # Tree-of-Thought beam search analysis (Checkpoint 4.1)
+    tot_result = beam_search_analysis(companies, findings, industry)
+
     llm = get_llm()
     system_prompt = load_prompt("analysis")
 
     findings_summary = json.dumps(findings[:50], indent=2)
+    tot_summary = json.dumps(tot_result.get("best_branch", {}), indent=2)
 
     user_content = f"""
 Industry: {industry}
 Companies: {', '.join(companies)}
 Categories: {', '.join(categories)}
+
+Tree-of-Thought selected hypothesis:
+{tot_result.get('selected_hypothesis', '')}
+ToT confidence: {tot_result.get('tot_confidence', 0):.0%}
+
+Best reasoning branch:
+{tot_summary}
 
 Validated findings:
 {findings_summary}
@@ -73,7 +86,8 @@ Generate a competitive analysis as JSON with:
   ]
 }}
 
-Base all conclusions on the provided findings. Mark unsupported areas as "not publicly available".
+Base all conclusions on the provided findings and ToT analysis.
+Mark unsupported areas as "not publicly available".
 Scores are analytical assessments (1=weak, 5=market-leading), not absolute facts.
 """
 
@@ -105,12 +119,24 @@ Scores are analytical assessments (1=weak, 5=market-leading), not absolute facts
             for r in analysis.get("recommendations", [])
         ]
 
+        react = record_react_step(
+            state,
+            "decide",
+            "Selected best ToT branch for competitive analysis",
+            tot_result.get("selected_hypothesis", ""),
+            {"tot_confidence": tot_result.get("tot_confidence", 0)},
+        )
+
         return {
+            **react,
             "comparison": analysis.get("comparison", {}),
             "swot_analysis": {"companies": swot},
             "scorecard": scorecard,
             "recommendations": recommendations,
-            "status_message": "Competitive analysis complete",
+            "tot_analysis": tot_result,
+            "tot_confidence": tot_result.get("tot_confidence", 0),
+            "selected_hypothesis": tot_result.get("selected_hypothesis", ""),
+            "status_message": "Competitive analysis complete (ToT beam search)",
         }
     except (json.JSONDecodeError, ValueError) as exc:
         return {
@@ -118,6 +144,9 @@ Scores are analytical assessments (1=weak, 5=market-leading), not absolute facts
             "swot_analysis": {},
             "scorecard": [],
             "recommendations": [],
+            "tot_analysis": tot_result,
+            "tot_confidence": tot_result.get("tot_confidence", 0),
+            "selected_hypothesis": tot_result.get("selected_hypothesis", ""),
             "errors": state.get("errors", []) + [f"Analysis failed: {exc}"],
             "status_message": "Analysis completed with errors",
         }

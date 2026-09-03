@@ -43,6 +43,24 @@ class ResearchState(TypedDict, total=False):
 
     # Memory
     previous_findings: list[dict[str, Any]]
+    short_term_memory: dict[str, Any]
+    coordination: dict[str, Any]
+
+    # RAG (Checkpoint 3.1)
+    rag_chunks_indexed: int
+    retrieved_context: list[dict[str, Any]]
+
+    # Tree-of-Thought (Checkpoint 4.1)
+    tot_analysis: dict[str, Any]
+    tot_confidence: float
+    selected_hypothesis: str
+
+    # Safety (Checkpoint 6.1)
+    verification_results: dict[str, Any]
+    escalation: dict[str, Any]
+    requires_human_review: bool
+    evaluation_metrics: dict[str, Any]
+    human_approved: bool
 
     # Output
     final_report: str

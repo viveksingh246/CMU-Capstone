@@ -2,7 +2,10 @@
 
 from typing import Any
 
+from config import settings
 from memory.schemas import SOURCE_CREDIBILITY_SCORES, SourceType
+from memory.short_term import record_react_step
+from safety.guardrails import check_output_constraints, filter_approved_sources, verify_multi_source
 from workflows.state import ResearchState
 
 
@@ -11,11 +14,15 @@ MIN_CONTENT_LENGTH = 50
 
 
 def validate_evidence(state: ResearchState) -> dict[str, Any]:
-    """Validate findings and filter low-quality evidence."""
+    """Validate findings, apply safety guardrails, and filter low-quality evidence."""
     findings = state.get("findings", [])
-    validated: list[dict[str, Any]] = []
     errors = list(state.get("errors", []))
 
+    # Tool access limits: approved public sources only (Checkpoint 6.1)
+    findings, source_warnings = filter_approved_sources(findings)
+    errors.extend(source_warnings)
+
+    validated: list[dict[str, Any]] = []
     seen_claims: set[str] = set()
 
     for finding in findings:
@@ -38,15 +45,34 @@ def validate_evidence(state: ResearchState) -> dict[str, Any]:
             source_type = SourceType.OTHER
 
         finding["credibility_score"] = SOURCE_CREDIBILITY_SCORES.get(source_type, 1)
-        validated.append(finding)
+
+        # Apply output labeling constraints (Checkpoint 6.1)
+        labeled = check_output_constraints(finding)
+        validated.append(labeled)
         seen_claims.add(claim_key)
+
+    # Multi-source verification for critical findings (Checkpoint 6.1)
+    verification_results = verify_multi_source(
+        validated,
+        min_sources=settings.min_sources_per_major_claim,
+    )
 
     removed = len(findings) - len(validated)
     if removed:
         errors.append(f"Filtered {removed} low-confidence or duplicate findings")
 
+    react = record_react_step(
+        state,
+        "reflect",
+        f"Validated {len(validated)} findings",
+        f"Verification rate: {verification_results['verification_rate']:.0%}",
+        {"unverified_count": len(verification_results.get("unverified_claims", []))},
+    )
+
     return {
+        **react,
         "findings": validated,
+        "verification_results": verification_results,
         "errors": errors,
-        "status_message": f"Validated {len(validated)} findings",
+        "status_message": f"Validated {len(validated)} findings (multi-source rate: {verification_results['verification_rate']:.0%})",
     }

@@ -175,14 +175,24 @@ def main():
                 status_box = st.empty()
 
                 try:
-                    status_box.info("Agent workflow running: plan → search → extract → validate → analyze → report")
+                    status_box.info(
+                        "Agent workflow: plan → search → RAG index → extract → validate → "
+                        "ToT analyze → safety check → report"
+                    )
                     progress.progress(20, text="Creating research plan...")
 
                     result = run_research(**config)
 
                     progress.progress(100, text="Research complete!")
                     st.session_state["last_result"] = result
-                    status_box.success(result.get("status_message", "Research complete"))
+
+                    if result.get("requires_human_review"):
+                        status_box.warning(
+                            "Research paused — human review required before report generation. "
+                            "See the Human Review section below."
+                        )
+                    else:
+                        status_box.success(result.get("status_message", "Research complete"))
 
                 except Exception as exc:
                     st.error(f"Research failed: {exc}")
@@ -209,6 +219,31 @@ def main():
 
         if "last_result" in st.session_state:
             result = st.session_state["last_result"]
+
+            # Human review section (Checkpoint 6.1)
+            if result.get("requires_human_review"):
+                st.divider()
+                st.subheader("Human Review Required")
+                escalation = result.get("escalation", {})
+                st.warning(
+                    f"Overall confidence: **{escalation.get('overall_confidence', 0):.0%}** "
+                    f"(threshold: {escalation.get('threshold', 0.7):.0%})"
+                )
+                for reason in escalation.get("escalation_reasons", []):
+                    st.write(f"- {reason}")
+
+                if result.get("escalation_summary"):
+                    with st.expander("Escalation Details"):
+                        st.markdown(result["escalation_summary"])
+
+                approve_col, retry_col = st.columns(2)
+                with approve_col:
+                    if st.button("Approve & Generate Report", type="primary", use_container_width=True):
+                        approved_result = run_research(**config, human_approved=True)
+                        st.session_state["last_result"] = approved_result
+                        st.rerun()
+                with retry_col:
+                    st.caption("Or adjust configuration and run research again.")
 
             st.divider()
             st.subheader("Executive Report")
@@ -239,6 +274,45 @@ def main():
             coverage = create_completeness_chart(completeness)
             if coverage:
                 st.plotly_chart(coverage, use_container_width=True)
+
+            # Evaluation metrics (Checkpoint 6.1)
+            metrics = result.get("evaluation_metrics", {})
+            if metrics:
+                st.divider()
+                st.subheader("Evaluation Metrics")
+                metric_cols = st.columns(3)
+                metric_items = [
+                    ("Correctness", metrics.get("correctness", {})),
+                    ("Groundedness", metrics.get("groundedness", {})),
+                    ("Source Credibility", metrics.get("source_credibility", {})),
+                    ("Freshness", metrics.get("freshness", {})),
+                    ("Research Coverage", metrics.get("research_coverage", {})),
+                    ("Safety Compliance", metrics.get("safety_compliance", {})),
+                ]
+                for col, (name, data) in zip(metric_cols * 2, metric_items):
+                    with col:
+                        if data:
+                            status = "✅" if data.get("passed") else "⚠️"
+                            st.metric(name, f"{data.get('value', 0):.0%}", delta=status)
+
+            # ToT analysis summary (Checkpoint 4.1)
+            tot = result.get("tot_analysis", {})
+            if tot.get("selected_hypothesis"):
+                with st.expander("Tree-of-Thought Analysis"):
+                    st.write(f"**Selected Hypothesis:** {tot.get('selected_hypothesis')}")
+                    st.write(f"**ToT Confidence:** {result.get('tot_confidence', 0):.0%}")
+                    tree_meta = tot.get("tree_metadata", {})
+                    if tree_meta.get("depths_explored"):
+                        st.write(f"**Depths Explored:** {len(tree_meta['depths_explored'])}")
+
+            # ReAct reasoning trace (Checkpoint 2.1)
+            stm = result.get("short_term_memory", {})
+            if stm.get("reasoning_steps"):
+                with st.expander("ReAct Reasoning Trace"):
+                    for step in stm["reasoning_steps"]:
+                        st.caption(
+                            f"**{step['phase'].upper()}** — {step['action']}: {step.get('observation', '')}"
+                        )
 
             if result.get("errors"):
                 with st.expander("Workflow Warnings"):
@@ -273,15 +347,36 @@ def main():
             7. **Remembers** previous findings in SQLite
             8. **Generates** executive reports with visualizations
 
-            ### Agent Workflow (LangGraph)
+            ### Agent Workflow (LangGraph + Multi-Agent)
 
             ```
-            Parse Request → Check Memory → Create Plan → Search Sources
-                  ↑                                              ↓
-                  └──── Missing Info? ← Check Completeness ← Validate
-                                                          ↓
-            Compare → Detect Changes → Save Memory → Generate Report
+            Parse Request → Check Memory → Coordinate
+                  → Create Plan → Search Sources → RAG Index
+                  → Extract Facts → Validate Evidence
+                  → Check Completeness ── Missing? ──► Search again
+                  → ToT Analysis → Detect Changes → Coordinate
+                  → Safety Check ── Low confidence? ──► Human Review
+                  → Save Memory → Generate Report
             ```
+
+            ### Six Specialized Agents (Checkpoint 5.1)
+
+            | Agent | Responsibility |
+            |-------|---------------|
+            | Planner | Structured research tasks and execution plans |
+            | Researcher | RAG, web search, document collection |
+            | Validator | Credibility, freshness, multi-source verification |
+            | Analyst | Tree-of-Thought competitive comparison |
+            | Reporter | Executive reports, SWOT, scorecards |
+            | Coordinator | Shared context, memory, agent coordination |
+
+            ### Architecture Checkpoints
+
+            - **2.1** ReAct reasoning loop with short-term + long-term memory
+            - **3.1** ChromaDB RAG with semantic retrieval
+            - **4.1** Tree-of-Thought beam search with Critic evaluation
+            - **5.1** Six-agent multi-agent coordination via LangGraph + MCP
+            - **6.1** Safety guardrails, escalation, and human review
 
             ### Seven-Week Capstone Plan
 

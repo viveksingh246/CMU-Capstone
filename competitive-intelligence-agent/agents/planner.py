@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.llm import get_llm, load_prompt
 from memory.schemas import ResearchPlan, ResearchRequest
+from memory.short_term import record_react_step
 from workflows.state import ResearchState
 
 
@@ -75,7 +76,15 @@ Create a detailed research plan as JSON with this structure:
     for task in plan.tasks:
         search_queries.extend(task.search_queries)
 
+    react = record_react_step(
+        state,
+        "plan",
+        f"Created plan with {len(search_queries)} search queries",
+        f"Categories: {', '.join(request.categories)}",
+    )
+
     return {
+        **react,
         "research_plan": plan.model_dump(),
         "search_queries": search_queries,
         "status_message": f"Created research plan with {len(search_queries)} search queries",

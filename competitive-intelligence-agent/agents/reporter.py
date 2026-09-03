@@ -31,6 +31,10 @@ def generate_report(state: ResearchState) -> dict[str, Any]:
         "historical_changes": state.get("historical_changes", []),
         "alerts": state.get("alerts", []),
         "category_completeness": state.get("category_completeness", {}),
+        "selected_hypothesis": state.get("selected_hypothesis", ""),
+        "tot_confidence": state.get("tot_confidence", 0),
+        "evaluation_metrics": state.get("evaluation_metrics", {}),
+        "escalation": state.get("escalation", {}),
         "sources": _build_sources_list(state.get("findings", [])),
     }
 

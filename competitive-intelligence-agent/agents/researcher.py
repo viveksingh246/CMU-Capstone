@@ -2,6 +2,9 @@
 
 from typing import Any
 
+from config import settings
+from memory.short_term import record_react_step
+from rag.vector_store import DocumentVectorStore
 from tools.mcp_tools import search_web_mcp
 from workflows.state import ResearchState
 
@@ -32,9 +35,50 @@ def collect_research(state: ResearchState) -> dict[str, Any]:
         except Exception as exc:
             errors.append(f"Search failed for '{query}': {exc}")
 
+    react = record_react_step(
+        state,
+        "act",
+        f"Executed {len(new_completed)} search queries",
+        f"Collected {len(documents)} total documents",
+        {"queries": new_completed},
+    )
+
     return {
+        **react,
         "documents": documents,
         "completed_queries": list(completed) + new_completed,
         "errors": errors,
         "status_message": f"Collected {len(documents)} documents ({len(new_completed)} queries executed)",
     }
+
+
+def index_documents_for_rag(state: ResearchState) -> dict[str, Any]:
+    """Index collected documents into ChromaDB for semantic retrieval (Checkpoint 3.1)."""
+    if not settings.use_rag:
+        return {"status_message": "RAG indexing skipped (disabled)"}
+
+    documents = state.get("documents", [])
+    if not documents:
+        return {"rag_chunks_indexed": 0, "status_message": "No documents to index"}
+
+    try:
+        store = DocumentVectorStore()
+        run_id = str(state.get("run_id", "current"))
+        chunks_indexed = store.index_documents(documents, run_id=run_id)
+
+        react = record_react_step(
+            state,
+            "observe",
+            f"Indexed {chunks_indexed} document chunks into ChromaDB",
+            f"From {len(documents)} source documents",
+        )
+
+        return {
+            **react,
+            "rag_chunks_indexed": chunks_indexed,
+            "status_message": f"RAG: indexed {chunks_indexed} chunks from {len(documents)} documents",
+        }
+    except Exception as exc:
+        errors = list(state.get("errors", []))
+        errors.append(f"RAG indexing failed: {exc}")
+        return {"rag_chunks_indexed": 0, "errors": errors, "status_message": "RAG indexing failed"}
