@@ -1,0 +1,21 @@
+{
+  "sample_research_request": {
+    "industry": "Cloud Data Platforms",
+    "companies": ["Snowflake", "Databricks", "Google BigQuery"],
+    "categories": ["Products", "Features", "Pricing", "AI capabilities", "Partnerships", "Hiring trends"],
+    "date_range_days": 90,
+    "geographic_market": "Global",
+    "report_depth": "standard"
+  },
+  "expected_outputs": [
+    "Executive summary",
+    "Product comparison matrix",
+    "Pricing comparison",
+    "SWOT analysis per company",
+    "Weighted competitive scorecard",
+    "Strategic recommendations with evidence",
+    "Source bibliography",
+    "Historical change report (on repeat runs)",
+    "Alerts for significant changes"
+  ]
+}

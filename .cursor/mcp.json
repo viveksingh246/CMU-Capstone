@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "ci-search": {
+      "command": "python",
+      "args": ["mcp_servers/search_server.py"],
+      "cwd": "${workspaceFolder}"
+    },
+    "ci-memory": {
+      "command": "python",
+      "args": ["mcp_servers/memory_server.py"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}

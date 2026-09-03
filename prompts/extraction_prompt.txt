@@ -1,0 +1,21 @@
+Extract only facts supported by the supplied source document.
+
+For each fact, return:
+- company: The company name this fact relates to
+- category: One of the requested analysis categories
+- claim: A clear, factual statement
+- evidence: A direct quote or passage from the source supporting the claim
+- source_url: URL of the source
+- source_title: Title of the source
+- published_date: Publication date if available, otherwise null
+- source_type: One of: official_website, official_documentation, regulatory_filing, official_blog, press_release, news, research_paper, github, job_posting, other
+- confidence: Score from 0.0 to 1.0 based on how directly the source supports the claim
+- is_company_claim: true if this is a marketing or promotional statement from the company
+
+Rules:
+- Do NOT add facts that are not present in the source
+- Clearly mark opinions, marketing claims, and estimates
+- Do NOT invent pricing numbers not stated in the source
+- If pricing is not mentioned, do not create a pricing fact
+- If information is ambiguous, lower the confidence score
+- Separate facts from interpretations
