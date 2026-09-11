@@ -6,7 +6,34 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _coerce_string_list_item(item: Any) -> str:
+    """Normalize LLM list entries that may be plain strings or small dicts."""
+    if isinstance(item, str):
+        return item.strip()
+    if isinstance(item, dict):
+        for key in ("trend", "description", "text", "name", "title", "value", "summary"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        for value in item.values():
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+    if item is None:
+        return ""
+    return str(item).strip()
+
+
+def _coerce_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        single = _coerce_string_list_item(value)
+        return [single] if single else []
+    return [text for text in (_coerce_string_list_item(item) for item in value) if text]
 
 
 class SourceType(str, Enum):
@@ -102,6 +129,19 @@ class CompanyScore(BaseModel):
     hiring_momentum: float = Field(ge=1.0, le=5.0)
     rationale: dict[str, str] = Field(default_factory=dict)
 
+    @field_validator("rationale", mode="before")
+    @classmethod
+    def coerce_rationale(cls, value: Any) -> dict[str, str]:
+        """LLMs often return rationale as a plain string instead of a dict."""
+        if value is None:
+            return {}
+        if isinstance(value, str):
+            stripped = value.strip()
+            return {"summary": stripped} if stripped else {}
+        if isinstance(value, dict):
+            return {str(key): str(item) for key, item in value.items()}
+        return {}
+
     @property
     def overall_score(self) -> float:
         return round(
@@ -174,3 +214,9 @@ class CompetitiveReport(BaseModel):
     historical_changes: list[HistoricalChange] = Field(default_factory=list)
     alerts: list[Alert] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    @field_validator("key_trends", mode="before")
+    @classmethod
+    def coerce_key_trends(cls, value: Any) -> list[str]:
+        """LLMs often return key trends as objects like {\"trend\": \"...\"}."""
+        return _coerce_string_list(value)

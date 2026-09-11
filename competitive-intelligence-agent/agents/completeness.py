@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from config import settings
+from agents.llm import get_effective_max_research_iterations
 from workflows.state import ResearchState
 
 MIN_FINDINGS_PER_CATEGORY = 2
@@ -38,7 +40,7 @@ def check_completeness(state: ResearchState) -> dict[str, Any]:
                 additional_queries.append(f"{company} {category} product features 2026")
 
     iteration = state.get("iteration_count", 0)
-    max_iterations = 3
+    max_iterations = get_effective_max_research_iterations()
 
     if missing_information and iteration < max_iterations:
         existing_queries = set(state.get("search_queries", []))
@@ -62,6 +64,6 @@ def should_continue_research(state: ResearchState) -> str:
     """Routing function: continue searching or proceed to analysis."""
     missing = state.get("missing_information", [])
     iteration = state.get("iteration_count", 0)
-    if missing and iteration < 3:
+    if missing and iteration < get_effective_max_research_iterations():
         return "search_more"
     return "analyze"

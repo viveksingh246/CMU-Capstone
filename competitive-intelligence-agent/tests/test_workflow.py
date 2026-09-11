@@ -87,6 +87,12 @@ def test_route_after_coordinate_post_analysis_phase():
     assert route_after_coordinate(state) == "safety_check"
 
 
+def test_route_after_coordinate_empty_comparison_still_advances():
+    """Empty comparison dict must not loop back to planning."""
+    state = {"comparison": {}, "escalation": None}
+    assert route_after_coordinate(state) == "safety_check"
+
+
 def test_should_generate_report_requires_human_review():
     state = {"requires_human_review": True, "human_approved": False}
     assert should_generate_report(state) == "human_review"

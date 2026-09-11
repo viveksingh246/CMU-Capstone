@@ -1,5 +1,7 @@
 """LangGraph workflow for competitive intelligence research."""
 
+from __future__ import annotations
+
 from datetime import date, timedelta
 from typing import Any
 
@@ -17,6 +19,7 @@ from agents.validator import validate_evidence
 from memory.short_term import record_react_step
 from safety.escalation import format_escalation_summary
 from safety.guardrails import InputValidationError, validate_research_request
+from workflows.progress import StepCallback, format_step_detail
 from workflows.state import ResearchState
 
 
@@ -116,7 +119,9 @@ def route_after_parse(state: ResearchState) -> str:
 
 def route_after_coordinate(state: ResearchState) -> str:
     """Route coordinator output based on workflow phase."""
-    if state.get("comparison") and not state.get("escalation"):
+    # Use `is not None` — failed analysis may return an empty dict, which is still
+    # a completed analysis pass and must not loop back to planning.
+    if state.get("comparison") is not None:
         return "safety_check"
     return "create_plan"
 
@@ -195,7 +200,7 @@ def build_graph() -> StateGraph:
     return graph
 
 
-def run_research(
+def build_initial_state(
     industry: str,
     companies: list[str],
     categories: list[str],
@@ -206,10 +211,7 @@ def run_research(
     generate_alerts: bool = True,
     human_approved: bool = False,
 ) -> ResearchState:
-    """Execute the full competitive intelligence workflow."""
-    workflow = build_graph().compile()
-
-    initial_state: ResearchState = {
+    return {
         "industry": industry,
         "companies": companies,
         "categories": categories,
@@ -222,4 +224,95 @@ def run_research(
         "user_request": f"Compare {', '.join(companies)} in {industry}",
     }
 
-    return workflow.invoke(initial_state)
+
+def _execute_workflow(
+    initial_state: ResearchState,
+    llm_config,
+    on_step: StepCallback | None = None,
+) -> ResearchState:
+    from agents.llm import llm_context
+    from config import settings
+
+    workflow = build_graph().compile()
+    graph_config = {"recursion_limit": settings.graph_recursion_limit}
+    final_state: ResearchState = dict(initial_state)
+
+    with llm_context(llm_config):
+        stream = workflow.stream(
+            initial_state,
+            config=graph_config,
+            stream_mode=["updates", "values"],
+        )
+        for mode, chunk in stream:
+            if mode == "updates":
+                for node_name, node_update in chunk.items():
+                    if on_step is not None:
+                        detail = format_step_detail(node_name, node_update)
+                        on_step(node_name, detail, node_update)
+            elif mode == "values":
+                final_state = chunk
+
+    return final_state
+
+
+def run_research(
+    industry: str,
+    companies: list[str],
+    categories: list[str],
+    date_range_days: int = 90,
+    geographic_market: str = "Global",
+    report_depth: str = "standard",
+    include_historical_comparison: bool = True,
+    generate_alerts: bool = True,
+    human_approved: bool = False,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+) -> ResearchState:
+    """Execute the full competitive intelligence workflow."""
+    from agents.llm import LLMConfig
+
+    llm_config = LLMConfig.from_inputs(provider=llm_provider, model=llm_model)
+    initial_state = build_initial_state(
+        industry=industry,
+        companies=companies,
+        categories=categories,
+        date_range_days=date_range_days,
+        geographic_market=geographic_market,
+        report_depth=report_depth,
+        include_historical_comparison=include_historical_comparison,
+        generate_alerts=generate_alerts,
+        human_approved=human_approved,
+    )
+    return _execute_workflow(initial_state, llm_config)
+
+
+def run_research_with_progress(
+    on_step: StepCallback,
+    industry: str,
+    companies: list[str],
+    categories: list[str],
+    date_range_days: int = 90,
+    geographic_market: str = "Global",
+    report_depth: str = "standard",
+    include_historical_comparison: bool = True,
+    generate_alerts: bool = True,
+    human_approved: bool = False,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+) -> ResearchState:
+    """Execute workflow and emit per-node progress callbacks for the UI."""
+    from agents.llm import LLMConfig
+
+    llm_config = LLMConfig.from_inputs(provider=llm_provider, model=llm_model)
+    initial_state = build_initial_state(
+        industry=industry,
+        companies=companies,
+        categories=categories,
+        date_range_days=date_range_days,
+        geographic_market=geographic_market,
+        report_depth=report_depth,
+        include_historical_comparison=include_historical_comparison,
+        generate_alerts=generate_alerts,
+        human_approved=human_approved,
+    )
+    return _execute_workflow(initial_state, llm_config, on_step=on_step)

@@ -7,18 +7,68 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from agents.llm import get_llm, load_prompt
+from agents.llm import (
+    LLMBudgetExhausted,
+    can_invoke_llm,
+    get_llm,
+    invoke_llm,
+    is_cloud_efficiency_mode,
+    load_prompt,
+)
 from memory.schemas import CompetitiveReport
 from workflows.state import ResearchState
 
 REPORTS_DIR = Path(__file__).parent.parent / "reports"
 
 
+def _generate_template_report(state: ResearchState, sources: list[dict[str, str]]) -> str:
+    """Deterministic markdown report — no LLM call (cloud efficiency mode)."""
+    industry = state.get("industry", "")
+    companies = state.get("companies", [])
+    comparison = state.get("comparison", {})
+    scorecard = state.get("scorecard", [])
+    recommendations = state.get("recommendations", [])
+    findings = state.get("findings", [])
+    hypothesis = state.get("selected_hypothesis", "")
+
+    lines = [
+        "# Competitive Intelligence Report",
+        "",
+        "## Executive Summary",
+        f"Analysis of **{', '.join(companies)}** in **{industry}**.",
+        hypothesis or "Strategic assessment based on validated public evidence.",
+        "",
+        "## Market Overview",
+        f"Compared {len(companies)} companies across {len(state.get('categories', []))} categories.",
+        "",
+        "## Company Profiles",
+    ]
+    for company in companies:
+        company_findings = [f for f in findings if f.get("company") == company]
+        lines.append(f"### {company}")
+        lines.append(f"- {len(company_findings)} validated findings")
+        lines.append("")
+
+    lines.extend(["## Product Comparison Matrix", str(comparison.get("feature_matrix", {})), ""])
+    lines.extend(["## Pricing Comparison", str(comparison.get("pricing_comparison", {})), ""])
+    lines.extend(["## Recent Strategic Moves", str(comparison.get("strategic_moves", [])), ""])
+    lines.extend(["## AI Capability Analysis", str(comparison.get("ai_analysis", {})), ""])
+    lines.extend(["## Competitive Scorecard", json.dumps(scorecard, indent=2), ""])
+    lines.extend(["## Key Trends", str(comparison.get("key_trends", [])), ""])
+    lines.extend(["## Strategic Recommendations"])
+    for rec in recommendations[:10]:
+        if isinstance(rec, dict):
+            lines.append(f"- **{rec.get('priority', 'Medium')}**: {rec.get('recommendation', '')}")
+        else:
+            lines.append(f"- {rec}")
+    lines.extend(["", "## Sources"])
+    for source in sources:
+        lines.append(f"- [{source.get('title', 'Source')}]({source.get('url', '')})")
+    return "\n".join(lines)
+
+
 def generate_report(state: ResearchState) -> dict[str, Any]:
     """Generate the final executive competitive intelligence report."""
-    llm = get_llm()
-    system_prompt = load_prompt("report")
-
     report_input = {
         "industry": state.get("industry"),
         "companies": state.get("companies"),
@@ -38,7 +88,16 @@ def generate_report(state: ResearchState) -> dict[str, Any]:
         "sources": _build_sources_list(state.get("findings", [])),
     }
 
-    user_content = f"""
+    sources = report_input["sources"]
+    use_template = is_cloud_efficiency_mode() or not can_invoke_llm()
+
+    if use_template:
+        final_report = _generate_template_report(state, sources)
+        status_suffix = " (template, no LLM)"
+    else:
+        llm = get_llm()
+        system_prompt = load_prompt("report")
+        user_content = f"""
 Generate an executive competitive intelligence report in Markdown format.
 
 Input data:
@@ -66,15 +125,19 @@ Guardrails:
 - Distinguish facts from analysis
 - Note any incomplete categories
 """
-
-    response = llm.invoke(
-        [SystemMessage(content=system_prompt), HumanMessage(content=user_content)]
-    )
-    content = response.content
-    if isinstance(content, list):
-        content = "".join(str(part) for part in content)
-
-    final_report = str(content)
+        try:
+            response = invoke_llm(
+                llm,
+                [SystemMessage(content=system_prompt), HumanMessage(content=user_content)],
+            )
+            content = response.content
+            if isinstance(content, list):
+                content = "".join(str(part) for part in content)
+            final_report = str(content)
+            status_suffix = ""
+        except LLMBudgetExhausted:
+            final_report = _generate_template_report(state, sources)
+            status_suffix = " (template fallback — LLM budget exhausted)"
 
     report_data = CompetitiveReport(
         executive_summary=_extract_section(final_report, "Executive Summary"),
@@ -89,7 +152,7 @@ Guardrails:
         scorecard=[],
         key_trends=state.get("comparison", {}).get("key_trends", []),
         recommendations=[],
-        sources=report_input["sources"],
+        sources=sources,
         historical_changes=[],
         alerts=[],
     )
@@ -108,7 +171,7 @@ Guardrails:
     return {
         "final_report": final_report,
         "report_data": report_data.model_dump(),
-        "status_message": f"Report saved to {report_path.name}",
+        "status_message": f"Report saved to {report_path.name}{status_suffix}",
     }
 
 

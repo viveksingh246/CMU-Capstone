@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from agents.llm import get_effective_max_queries_per_pass, is_cloud_efficiency_mode
 from config import settings
 from memory.short_term import record_react_step
 from rag.vector_store import DocumentVectorStore
@@ -23,8 +24,9 @@ def collect_research(state: ResearchState) -> dict[str, Any]:
     new_completed: list[str] = []
     errors = list(state.get("errors", []))
 
-    # Process up to 5 queries per iteration to manage API costs
-    for query in pending[:5]:
+    # Process a limited number of queries per iteration (fewer in fast/efficiency mode)
+    query_limit = get_effective_max_queries_per_pass()
+    for query in pending[:query_limit]:
         try:
             results = search_web_mcp(query, max_results=3)
             for result in results:
@@ -54,8 +56,8 @@ def collect_research(state: ResearchState) -> dict[str, Any]:
 
 def index_documents_for_rag(state: ResearchState) -> dict[str, Any]:
     """Index collected documents into ChromaDB for semantic retrieval (Checkpoint 3.1)."""
-    if not settings.use_rag:
-        return {"status_message": "RAG indexing skipped (disabled)"}
+    if not settings.use_rag or is_cloud_efficiency_mode():
+        return {"status_message": "RAG indexing skipped (disabled or fast mode)"}
 
     documents = state.get("documents", [])
     if not documents:

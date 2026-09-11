@@ -9,7 +9,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.critic import evaluate_branch
-from agents.llm import get_llm
+from agents.llm import get_llm, invoke_llm, is_cloud_efficiency_mode
 
 PRUNE_THRESHOLD = 65
 BEAM_WIDTH = 3
@@ -60,6 +60,9 @@ def generate_initial_branches(
     industry: str,
 ) -> list[ThoughtNode]:
     """Generate candidate strategic interpretation branches at depth 1."""
+    if is_cloud_efficiency_mode():
+        return _fallback_branches(companies)
+
     try:
         llm = get_llm()
     except ValueError:
@@ -93,7 +96,7 @@ Return JSON array:
 """
 
     try:
-        response = llm.invoke([HumanMessage(content=prompt)])
+        response = invoke_llm(llm, [HumanMessage(content=prompt)])
         content = response.content
         if isinstance(content, list):
             content = "".join(str(part) for part in content)
@@ -149,6 +152,18 @@ def _fallback_branches(companies: list[str]) -> list[ThoughtNode]:
 
 def expand_branch(node: ThoughtNode, findings: list[dict[str, Any]], companies: list[str]) -> ThoughtNode:
     """Expand a branch to the next depth level with evidence assessment."""
+    if is_cloud_efficiency_mode():
+        return ThoughtNode(
+            hypothesis=node.hypothesis,
+            branch_type=node.branch_type,
+            depth=node.depth + 1,
+            supporting_evidence=findings[:15],
+            confidence_score=node.confidence_score,
+            reasoning_history=node.reasoning_history + ["Efficiency mode: deterministic branch expansion"],
+            parent_id=node.node_id,
+            node_id=f"{node.node_id}_d{node.depth + 1}",
+        )
+
     try:
         llm = get_llm()
     except ValueError:
@@ -182,7 +197,7 @@ Return JSON:
 """
 
     try:
-        response = llm.invoke([HumanMessage(content=prompt)])
+        response = invoke_llm(llm, [HumanMessage(content=prompt)])
         content = response.content
         if isinstance(content, list):
             content = "".join(str(part) for part in content)

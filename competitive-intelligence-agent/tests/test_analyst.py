@@ -1,6 +1,6 @@
 """Tests for Analysis Agent and historical change detection."""
 
-from agents.analyst import _fallback_analysis, detect_historical_changes
+from agents.analyst import _fallback_analysis, _sanitize_swot, detect_historical_changes
 
 
 def test_detect_historical_changes_new_findings():
@@ -71,3 +71,17 @@ def test_fallback_analysis_without_llm():
     assert len(result["scorecard"]) == 2
     assert result["comparison"]["ai_analysis"]["hypothesis"] == "Snowflake leads in innovation"
     assert "ToT fallback" in result["status_message"]
+
+
+def test_sanitize_swot_strips_non_integer_evidence_ids():
+    raw = [
+        {
+            "company": "Snowflake",
+            "strengths": [{"point": "Strong platform", "evidence_ids": ["Snowflake Feature Matrix", 12]}],
+            "weaknesses": [],
+            "opportunities": [],
+            "threats": [],
+        }
+    ]
+    sanitized = _sanitize_swot(raw)
+    assert sanitized[0]["strengths"][0]["evidence_ids"] == [12]

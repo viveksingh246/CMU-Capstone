@@ -5,11 +5,30 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from agents.llm import get_llm, load_prompt
+from agents.llm import get_llm, invoke_llm, is_cloud_efficiency_mode, load_prompt, LLMBudgetExhausted
 from memory.schemas import Alert, CompanyScore, CompanySWOT, Recommendation
 from memory.short_term import record_react_step
 from reasoning.tot_engine import beam_search_analysis
 from workflows.state import ResearchState
+
+
+def _sanitize_swot(swot_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop non-integer evidence_ids — small LLMs often return labels instead of IDs."""
+    sanitized: list[dict[str, Any]] = []
+    for entry in swot_data:
+        cleaned = dict(entry)
+        for section in ("strengths", "weaknesses", "opportunities", "threats"):
+            points = []
+            for point in cleaned.get(section, []):
+                point_dict = dict(point)
+                raw_ids = point_dict.get("evidence_ids", [])
+                point_dict["evidence_ids"] = [
+                    item for item in raw_ids if isinstance(item, int) and not isinstance(item, bool)
+                ]
+                points.append(point_dict)
+            cleaned[section] = points
+        sanitized.append(cleaned)
+    return sanitized
 
 
 def analyze_competitors(state: ResearchState) -> dict[str, Any]:
@@ -96,8 +115,9 @@ Scores are analytical assessments (1=weak, 5=market-leading), not absolute facts
 """
 
     try:
-        response = llm.invoke(
-            [SystemMessage(content=system_prompt), HumanMessage(content=user_content)]
+        response = invoke_llm(
+            llm,
+            [SystemMessage(content=system_prompt), HumanMessage(content=user_content)],
         )
         content = response.content
         if isinstance(content, list):
@@ -111,7 +131,10 @@ Scores are analytical assessments (1=weak, 5=market-leading), not absolute facts
 
         analysis = json.loads(text)
 
-        swot = [CompanySWOT.model_validate(s).model_dump() for s in analysis.get("swot", [])]
+        swot = [
+            CompanySWOT.model_validate(s).model_dump()
+            for s in _sanitize_swot(analysis.get("swot", []))
+        ]
         scorecard = [
             CompanyScore.model_validate(s).model_dump() for s in analysis.get("scorecard", [])
         ]
@@ -143,17 +166,14 @@ Scores are analytical assessments (1=weak, 5=market-leading), not absolute facts
             "status_message": "Competitive analysis complete (ToT beam search)",
         }
     except (json.JSONDecodeError, ValueError) as exc:
-        return {
-            "comparison": {},
-            "swot_analysis": {},
-            "scorecard": [],
-            "recommendations": [],
-            "tot_analysis": tot_result,
-            "tot_confidence": tot_result.get("tot_confidence", 0),
-            "selected_hypothesis": tot_result.get("selected_hypothesis", ""),
-            "errors": state.get("errors", []) + [f"Analysis failed: {exc}"],
-            "status_message": "Analysis completed with errors",
-        }
+        result = _fallback_analysis(state, companies, categories, industry, tot_result)
+        result["errors"] = state.get("errors", []) + [f"Analysis failed: {exc}"]
+        result["status_message"] = "Analysis completed with errors (LLM parse fallback)"
+        return result
+    except LLMBudgetExhausted:
+        result = _fallback_analysis(state, companies, categories, industry, tot_result)
+        result["status_message"] = "Competitive analysis complete (budget-safe fallback)"
+        return result
 
 
 def _fallback_analysis(

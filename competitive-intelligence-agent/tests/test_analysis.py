@@ -1,6 +1,6 @@
 """Tests for competitive analysis scoring."""
 
-from memory.schemas import CompanyScore
+from memory.schemas import CompanyScore, CompetitiveReport
 
 
 def test_overall_score_weighted_calculation():
@@ -31,3 +31,47 @@ def test_score_range():
         hiring_momentum=1.0,
     )
     assert score.overall_score == 1.0
+
+
+def test_rationale_accepts_string_from_llm():
+    score = CompanyScore(
+        company="Coursera",
+        product_breadth=4.0,
+        feature_differentiation=4.0,
+        pricing_attractiveness=3.0,
+        ai_maturity=3.0,
+        partnerships=3.0,
+        innovation_momentum=4.0,
+        hiring_momentum=3.0,
+        rationale="Coursera has a strong product portfolio and partnerships to attract new users.",
+    )
+    assert score.rationale == {
+        "summary": "Coursera has a strong product portfolio and partnerships to attract new users.",
+    }
+
+
+def test_competitive_report_key_trends_accepts_dict_items_from_llm():
+    report = CompetitiveReport(
+        executive_summary="summary",
+        market_overview="overview",
+        company_profiles={},
+        feature_matrix={},
+        pricing_comparison={},
+        strategic_moves=[],
+        hiring_signals={},
+        ai_analysis={},
+        swot=[],
+        scorecard=[],
+        key_trends=[
+            {"trend": "Growing demand for cloud-based data platforms"},
+            {"trend": "Rising importance of machine learning capabilities"},
+            "Expanding into adjacent markets",
+        ],
+        recommendations=[],
+        sources=[],
+    )
+    assert report.key_trends == [
+        "Growing demand for cloud-based data platforms",
+        "Rising importance of machine learning capabilities",
+        "Expanding into adjacent markets",
+    ]

@@ -2,6 +2,7 @@
 
 import pytest
 
+from memory.schemas import ExtractedFact, SourceType
 from safety.guardrails import (
     InputValidationError,
     check_output_constraints,
@@ -35,6 +36,24 @@ def test_filter_approved_sources_keeps_public_types():
     ]
     approved, warnings = filter_approved_sources(findings)
     assert len(approved) == 3
+    assert warnings == []
+
+
+def test_filter_approved_sources_accepts_enum_objects_from_model_dump():
+    """Python 3.9 str(Enum) is not the enum value — normalize before filtering."""
+    finding = ExtractedFact(
+        company="Snowflake",
+        category="Products",
+        claim="Cloud data platform",
+        evidence="x" * 50,
+        source_url="https://snowflake.com",
+        source_title="Snowflake",
+        confidence=0.8,
+        source_type=SourceType.OFFICIAL_WEBSITE,
+    ).model_dump()
+
+    approved, warnings = filter_approved_sources([finding])
+    assert len(approved) == 1
     assert warnings == []
 
 

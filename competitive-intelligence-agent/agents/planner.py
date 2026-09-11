@@ -5,7 +5,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from agents.llm import get_llm, load_prompt
+from agents.llm import get_llm, invoke_llm, is_cloud_efficiency_mode, load_prompt, LLMBudgetExhausted
 from memory.schemas import ResearchPlan, ResearchRequest
 from memory.short_term import record_react_step
 from workflows.state import ResearchState
@@ -52,8 +52,9 @@ Create a detailed research plan as JSON with this structure:
 """
 
     llm = get_llm()
-    response = llm.invoke(
-        [SystemMessage(content=system_prompt), HumanMessage(content=user_content)]
+    response = invoke_llm(
+        llm,
+        [SystemMessage(content=system_prompt), HumanMessage(content=user_content)],
     )
 
     content = response.content

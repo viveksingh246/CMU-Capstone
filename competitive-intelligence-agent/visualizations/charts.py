@@ -28,6 +28,30 @@ SCORE_LABELS = {
     "hiring_momentum": "Hiring",
 }
 
+CHART_FONT = dict(family="Inter, system-ui, sans-serif", size=11, color="#7A6552")
+CHART_TITLE = dict(font=dict(size=12, color="#3D2914", family="Inter, system-ui"), x=0, xanchor="left")
+CHART_MARGIN = dict(l=44, r=20, t=40, b=40)
+CHART_HEIGHT = 280
+CHART_COLORS = ["#3D2914", "#C8920A", "#F5B041", "#8B6914", "#7A6552", "#5C3D1E"]
+CHART_GRID = "#F5EDE0"
+CHART_AXIS = "#E8DCC8"
+CHART_SCALE = [[0, "#FFF8E7"], [0.5, "#D4A017"], [1, "#3D2914"]]
+
+
+def _apply_compact_layout(fig, height: int = CHART_HEIGHT) -> go.Figure:
+    fig.update_layout(
+        height=height,
+        margin=CHART_MARGIN,
+        title=CHART_TITLE,
+        font=CHART_FONT,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)),
+    )
+    fig.update_xaxes(showgrid=True, gridcolor=CHART_GRID, linecolor=CHART_AXIS)
+    fig.update_yaxes(showgrid=True, gridcolor=CHART_GRID, linecolor=CHART_AXIS)
+    return fig
+
 
 def create_score_bar_chart(scorecard: list[dict[str, Any]]):
     """Bar chart comparing overall scores across companies."""
@@ -45,13 +69,14 @@ def create_score_bar_chart(scorecard: list[dict[str, Any]]):
         df,
         x="Company",
         y="Overall Score",
-        title="Competitive Scorecard",
+        title="Scorecard",
         color="Overall Score",
-        color_continuous_scale="Blues",
+        color_continuous_scale=CHART_SCALE,
         range_y=[0, 5],
     )
-    fig.update_layout(showlegend=False)
-    return fig
+    fig.update_layout(showlegend=False, coloraxis_showscale=False)
+    fig.update_traces(marker_line_width=0)
+    return _apply_compact_layout(fig)
 
 
 def create_radar_chart(scorecard: list[dict[str, Any]]):
@@ -75,16 +100,21 @@ def create_radar_chart(scorecard: list[dict[str, Any]]):
                 theta=labels,
                 fill="toself",
                 name=company,
-                opacity=0.6,
+                opacity=0.55,
+                line=dict(width=2),
             )
         )
 
     fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
-        title="Category Score Comparison",
+        polar=dict(
+            radialaxis=dict(visible=True, range=[0, 5], gridcolor=CHART_AXIS, linecolor=CHART_AXIS),
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        title="Category Comparison",
         showlegend=True,
+        colorway=CHART_COLORS,
     )
-    return fig
+    return _apply_compact_layout(fig)
 
 
 def create_category_heatmap(scorecard: list[dict[str, Any]]):
@@ -103,13 +133,13 @@ def create_category_heatmap(scorecard: list[dict[str, Any]]):
             z=data,
             x=companies,
             y=[SCORE_LABELS[c] for c in SCORE_CATEGORIES],
-            colorscale="Blues",
+            colorscale=CHART_SCALE,
             zmin=1,
             zmax=5,
         )
     )
-    fig.update_layout(title="Feature Comparison Heatmap")
-    return fig
+    fig.update_layout(title="Feature Heatmap")
+    return _apply_compact_layout(fig)
 
 
 def create_announcement_timeline(findings: list[dict[str, Any]]):
@@ -140,11 +170,12 @@ def create_announcement_timeline(findings: list[dict[str, Any]]):
         x="Date",
         y="Company",
         text="Event",
-        title="Recent Announcements Timeline",
+        title="Announcements",
         color="Company",
+        color_discrete_sequence=CHART_COLORS,
     )
-    fig.update_traces(textposition="top center")
-    return fig
+    fig.update_traces(textposition="top center", marker=dict(size=8))
+    return _apply_compact_layout(fig, height=220)
 
 
 def create_completeness_chart(category_completeness: dict[str, str]):
@@ -161,9 +192,9 @@ def create_completeness_chart(category_completeness: dict[str, str]):
     )
 
     color_map = {
-        "complete": "#2ecc71",
-        "insufficient_evidence": "#f39c12",
-        "incomplete": "#e74c3c",
+        "complete": "#5D7A4A",
+        "insufficient_evidence": "#D97706",
+        "incomplete": "#A63D2F",
     }
 
     fig = px.bar(
@@ -171,7 +202,8 @@ def create_completeness_chart(category_completeness: dict[str, str]):
         x="Category",
         y="Score",
         color="Status",
-        title="Research Coverage by Category",
+        title="Coverage",
         color_discrete_map=color_map,
     )
-    return fig
+    fig.update_layout(showlegend=False)
+    return _apply_compact_layout(fig, height=220)

@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from memory.schemas import SourceType
+
 BLOCKED_REQUEST_PATTERNS = [
     r"\b(ssn|social security)\b",
     r"\b(password|credential|api[_\s]?key)\b",
@@ -131,13 +133,31 @@ def check_output_constraints(finding: dict[str, Any]) -> dict[str, Any]:
     return labeled
 
 
+def _normalize_source_type(raw: Any) -> str:
+    """Normalize enum/string source types for approval checks (Py3.9-safe)."""
+    if isinstance(raw, SourceType):
+        return raw.value
+    if isinstance(raw, str):
+        lowered = raw.strip().lower()
+        if lowered in APPROVED_SOURCE_TYPES or lowered == "other":
+            return lowered
+        if lowered.startswith("sourcetype."):
+            enum_name = raw.split(".", 1)[1].strip().upper()
+            try:
+                return SourceType[enum_name].value
+            except KeyError:
+                return "other"
+        return lowered.replace(" ", "_")
+    return "other"
+
+
 def filter_approved_sources(findings: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
     """Filter findings to approved public source types only."""
     approved: list[dict[str, Any]] = []
     warnings: list[str] = []
 
     for finding in findings:
-        source_type = str(finding.get("source_type", "other"))
+        source_type = _normalize_source_type(finding.get("source_type", "other"))
         if source_type in APPROVED_SOURCE_TYPES or source_type == "other":
             approved.append(finding)
         else:
